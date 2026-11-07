@@ -1,0 +1,168 @@
+#include <ACAN_ESP32.h>
+#include "mensagensCan.h"
+
+// ── Pinos ──────────────────────────────────────────────
+#define sinalAcel1    GPIO_NUM_15
+#define sinalAcel2    GPIO_NUM_2
+#define comPreCharge  GPIO_NUM_12
+#define comContator   GPIO_NUM_13
+#define CANTX         GPIO_NUM_19
+#define CANRX         GPIO_NUM_18
+
+// ── Calibração (ajuste aqui) ───────────────────────────
+int pedal_min           = 400;
+int pedal_max           = 1550;
+int tolerancePedal      = 100;
+#define TORQUE_MAX      25.0f
+
+// ── Filtro ─────────────────────────────────────────────
+#define FILTER_SIZE     5
+#define READ_INTERVAL   10   // ms
+
+int  bufferPedal1[FILTER_SIZE] = {0};
+int  bufferPedal2[FILTER_SIZE] = {0};
+int  indexBuffer        = 0;
+bool bufferInitialized  = false;
+unsigned long lastRead  = 0;
+
+// ── Mensagens CAN ──────────────────────────────────────
+CANMessage      bufferTx;
+Pt_Edrv_Des_1   msgControle;
+Eem_Edrv_Lim_1  msgLimites;
+Pt_Veh_1        msgVeiculo1;
+
+unsigned long millis_ant = 0;
+
+// ── Helpers ────────────────────────────────────────────
+int calcMedia(int buf[], int n) {
+  long s = 0;
+  for (int i = 0; i < n; i++) s += buf[i];
+  return s / n;
+}
+
+void updatePedal() {
+  if (millis() - lastRead < READ_INTERVAL) return;
+  bufferPedal1[indexBuffer] = analogRead(sinalAcel1);
+  bufferPedal2[indexBuffer] = analogRead(sinalAcel2);
+  indexBuffer = (indexBuffer + 1) % FILTER_SIZE;
+  if (indexBuffer == 0) bufferInitialized = true;
+  lastRead = millis();
+}
+
+float leituraAcelerador() {
+  if (!bufferInitialized) return 0.0f;
+
+  int v1 = calcMedia(bufferPedal1, FILTER_SIZE);
+  int v2 = calcMedia(bufferPedal2, FILTER_SIZE);
+
+  int v;
+  if (abs(v1 - v2) <= tolerancePedal) {
+    v = (v1 + v2) / 2;
+  } else {
+    Serial.printf("  [WARN] Divergencia: v1=%d  v2=%d\n", v1, v2);
+    v = v1;   // << no teste usa só o sensor 1 mesmo com divergência
+  }
+
+  v = constrain(v, pedal_min, pedal_max);
+  return (float)(v - pedal_min) / (float)(pedal_max - pedal_min) * TORQUE_MAX;
+}
+
+void enviaMsgControle() {
+  bufferTx.id  = 0xA6;
+  bufferTx.len = msgControle.tamanho;
+  converteMsgControle(msgControle, bufferTx.data);
+  CalculateCRC8(bufferTx.data, bufferTx.len);
+  if (ACAN_ESP32::can.tryToSend(bufferTx))
+    msgControle.Pt_nrAlvCntrDes = (msgControle.Pt_nrAlvCntrDes + 1) % 16;
+}
+
+void enviaMsgLimites() {
+  bufferTx.id  = 0xA5;
+  bufferTx.len = msgLimites.tamanho;
+  converteMsgLimites(msgLimites, bufferTx.data);
+  CalculateCRC8(bufferTx.data, bufferTx.len);
+  if (ACAN_ESP32::can.tryToSend(bufferTx))
+    msgLimites.Eem_nrAlvCntrLim = (msgLimites.Eem_nrAlvCntrLim + 1) % 16;
+}
+
+void enviaMsgVeiculo1() {
+  bufferTx.id  = 0xA7;
+  bufferTx.len = msgVeiculo1.tamanho;
+  converteMsgVeiculo1(msgVeiculo1, bufferTx.data);
+  CalculateCRC8(bufferTx.data, bufferTx.len);
+  if (ACAN_ESP32::can.tryToSend(bufferTx))
+    msgVeiculo1.Pt_nrAlvCntrVeh1 = (msgVeiculo1.Pt_nrAlvCntrVeh1 + 1) % 16;
+}
+
+// ── Setup ──────────────────────────────────────────────
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n=== MODO TESTE ACELERADOR ===");
+
+  pinMode(sinalAcel1,   INPUT);
+  pinMode(sinalAcel2,   INPUT);
+  pinMode(comPreCharge, OUTPUT);
+  pinMode(comContator,  OUTPUT);
+
+  // Inicia CAN
+  ACAN_ESP32_Settings settings(500E3);
+  settings.mTxPin = CANTX;
+  settings.mRxPin = CANRX;
+  while (ACAN_ESP32::can.begin(settings)) {
+    Serial.println("Falha CAN, tentando...");
+    delay(500);
+  }
+  Serial.println("CAN OK");
+
+  // Mensagens padrão (mesmos valores do código original)
+  msgControle = {7, 0xFF, 0, 0, 0, -1.0f, IGN_OFF, 25.0f};
+  msgLimites  = {8, 0xFF, 0, -5, 30, 38, 52, 0.05f, 50};
+  msgVeiculo1 = {7, 0xFF, 0, 40, 90, 0};
+
+  // Sequência de ligação
+  Serial.println("Enviando limites...");
+  enviaMsgLimites();
+  delay(10);
+  enviaMsgVeiculo1();
+  delay(10);
+
+  Serial.println("Ligando ignicao...");
+  msgControle.Pt_stIgnSwt = IGN_ON;
+  msgControle.Pt_stOperModDesEdrv = MODO_IDLE;
+  enviaMsgControle();
+
+  Serial.println("Ligando contatores...");
+  digitalWrite(comPreCharge, HIGH);
+  delay(3000);
+  digitalWrite(comContator, HIGH);
+  digitalWrite(comPreCharge, LOW);
+
+  Serial.println("Pronto. Monitore pelo Serial Plotter (115200).\n");
+  Serial.println("adc1,adc2,torque_Nm");   // header CSV para Serial Plotter
+
+  millis_ant = millis();
+}
+
+// ── Loop ───────────────────────────────────────────────
+void loop() {
+  updatePedal();
+
+  // Envia controle a cada ~10ms
+  if (millis() - millis_ant > 9) {
+    float torque = leituraAcelerador();
+
+    msgControle.Pt_stOperModDesEdrv = MODO_TORQUE;
+    msgControle.Pt_tqDesEdrv        = torque;
+    msgControle.Pt_tqMinEdrv        = -1.0f;
+    msgControle.Pt_tqMaxEdrv        = TORQUE_MAX;
+    enviaMsgControle();
+
+    // Leituras brutas para calibração (formato CSV → Serial Plotter)
+    int v1 = calcMedia(bufferPedal1, FILTER_SIZE);
+    int v2 = calcMedia(bufferPedal2, FILTER_SIZE);
+    Serial.printf("%d,%d,%.2f\n", v1, v2, torque);
+
+    millis_ant = millis();
+  }
+}
