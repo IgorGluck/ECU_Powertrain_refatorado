@@ -331,15 +331,16 @@ switch (estadoPowertrain)
 ////////////////////////////////////////////////
 
 //Imprime o hexa de cada mensagem
-void printaMsg (unsigned char stringMsg[], int tamanho)
+void printaMsg (uint8_t* buffer, int tamanho)
 {
   for (int i = 0; i<tamanho; i++)
   {
-    Serial.printf("%02X ", stringMsg[i]);
+    Serial.printf("%02X ", buffer[i]);
   }
   Serial.println();
   return;
 }
+
 
 //Função de envio de mensagem de controle
 //Já trata o alive counter e calcula checksum
