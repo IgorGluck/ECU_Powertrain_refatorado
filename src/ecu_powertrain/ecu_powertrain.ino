@@ -16,7 +16,7 @@
 #define CANRX           GPIO_NUM_32     //Pino RX do transdutor CAN
 #define LED_BUILTIN     GPIO_NUM_2      //Pino do LED integrado
 
-int pos_pedal = 0;
+
 int pedal_min = 470;  //ajustado no carro
 int pedal_max = 1150; //ajustado no carro
 int tolerancePedalcurve = 700; //ajustado no carro, pendente parametrização
@@ -42,7 +42,6 @@ enum class EstadoPowertrain : uint8_t {
    PreCharge = 1,
    Neutro = 2,
    DriveAcelerando = 3,
-   DriveFreando = 4,  // implementacao futura freio regenerativo
    Reiniciando = 5  
 };
 
@@ -222,6 +221,10 @@ switch (estadoPowertrain)
          estadoPowertrain = EstadoPowertrain::DriveAcelerando;
        }   
       break;
+
+
+
+      
     case EstadoPowertrain::DriveAcelerando: // se estado atual é Acelerando
       digitalWrite(comEstadoDrive, HIGH); // acende o led painel
 
@@ -239,14 +242,14 @@ switch (estadoPowertrain)
       msgControle.pt_st_oper_mod_des_edrv = ModoOperacao::Idle; // motor em Idle
       msgControle.pt_tq_des_edrv = 0; // zera o torque
     }
+
+
+
+
     // se o botão de drive foi solto, volta para Neutro
     if (digitalRead(sinalDrive)) estadoPowertrain = EstadoPowertrain::Neutro;
     break; 
-     
-    case EstadoPowertrain::DriveFreando:
-      // freio regenerativo implementacao futura
-      
-      break;
+    
     case EstadoPowertrain::Reiniciando:
 
       
@@ -331,15 +334,16 @@ switch (estadoPowertrain)
 ////////////////////////////////////////////////
 
 //Imprime o hexa de cada mensagem
-void printaMsg (unsigned char stringMsg[], int tamanho)
+void printaMsg (uint8_t* buffer, int tamanho)
 {
   for (int i = 0; i<tamanho; i++)
   {
-    Serial.printf("%02X ", stringMsg[i]);
+    Serial.printf("%02X ", buffer[i]);
   }
   Serial.println();
   return;
 }
+
 
 //Função de envio de mensagem de controle
 //Já trata o alive counter e calcula checksum

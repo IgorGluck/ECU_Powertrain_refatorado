@@ -144,4 +144,4 @@ const char* textoDerating(uint8_t estado);
 /////        Cálculo de Checksum           /////
 ////////////////////////////////////////////////
 
-void calculateCrc8(const uint8_t* buffer, uint8_t tamanho, uint32_t msgId);
+void calculateCrc8(uint8_t* buffer, uint8_t tamanho, uint32_t msgId);
