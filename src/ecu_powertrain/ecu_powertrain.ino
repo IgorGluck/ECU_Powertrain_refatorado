@@ -1,6 +1,8 @@
 
 #include <ACAN_ESP32.h>
 #include "mensagensCan.h"
+#include "regen.h"
+
 
 //Definição dos pinos
 #define sinalDrive      GPIO_NUM_25     // pino da seleção de drive 
