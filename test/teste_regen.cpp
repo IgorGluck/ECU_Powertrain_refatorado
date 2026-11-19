@@ -82,8 +82,8 @@ void imprimeDiagnosticoMotivos(uint16_t motivos) {
 void imprimeResultado(const char* cenario, uint32_t t, const RegenIn& in,
                       const RegenOut& out) {
   printf("Teste: %s (t=%u ms)\n", cenario, (unsigned)t);
-  printf("Entrada: tensao=%.2f V, freio=%s, acelerador=%.1f Nm\n",
-         in.tensao, in.freio ? "pressionado" : "solto", in.tq_acel);
+  printf("Entrada: tensao=%.2f V, freio=%s, acelerador=%.1f Nm\n", in.tensao,
+         in.freio ? "pressionado" : "solto", in.tq_acel);
   printf("--------------------------------\n");
   printf("Regenerativo (sombra):\n");
   printf("--------------------------------\n");
@@ -116,8 +116,9 @@ void testaAcelerandoDepoisFreia() {
       imprimeResultado("acelerando->freia", t, in, out);
     }
     if (t == 50) {
-      verifica(fabsf(out.torque - 14.5f) < 0.01f,
-               "freio inicia em 50 ms; a rampa atual ainda deixa torque positivo");
+      verifica(
+          fabsf(out.torque - 14.5f) < 0.01f,
+          "freio inicia em 50 ms; a rampa atual ainda deixa torque positivo");
     }
   }
 
